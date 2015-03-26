@@ -1,0 +1,6 @@
+{:name "Upsource"
+ :version "0.0.1"
+ :author "jetzajac"
+ :source "git@github.com:zajac/LT-Upsource.git"
+ :desc "Upsource plugin for LightTable"
+ :behaviors "upsource.behaviors"}
