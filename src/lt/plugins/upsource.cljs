@@ -12,13 +12,39 @@
   [:h1 "Hello World from upsource!"]
 )
 
+(defui project-item [project]
+  [:button (project "projectName")]
+  :click println)
+
+
+(defui project-list-view [this]
+  [:div
+   (map project-item
+        (@this :projects))])
+
+
+
 (object/object* ::upsource
                 :tags [:upsource]
                 :behaviors []
                 :callbacks (atom {})
-                :request-id (atom 0)
-                :init (fn [this]
-                        (hello-panel this )))
+                :request-id (atom 0))
+
+(behavior ::on-close-destroy
+          :triggers #{:close}
+          :reaction (fn [this]
+                      (object/raise this :destroy)))
+
+
+(object/object* ::project-list
+                :tags [:project-list]
+                :behaviors [::on-close-destroy]
+                :projects []
+                :init (fn [this projects]
+                        (println projects)
+                        (object/merge! this {:projects (projects "project")})
+                        (project-list-view this)
+                        ))
 
 (def upsource (object/create ::upsource))
 
@@ -60,10 +86,10 @@
 
 (defmethod dispatch :RpcResult
   ([message data callback]
-     (let [{result "result", error "error"} data]
-       (cond
-        result (callback result)
-        error (callback :error error)))))
+   (let [{result "result", error "error"} data]
+     (cond
+      result (callback result)
+      error (callback :error error)))))
 
 
 (defn get-upsource []
@@ -71,14 +97,20 @@
     (object/raise upsource :upsource-connect))
   upsource)
 
-(cmd/command {:command :upsource-connect
-              :desc "Upsource: open"
+
+
+(cmd/command {:command :upsource-project-list
+              :desc "Upsource: Projects List"
               :exec (fn []
-                      (tabs/add-or-focus! (get-upsource)))})
+                      (req :getAllProjects (fn [projects]
+                                             (let [project-list (object/create ::project-list projects)]
+                                               (tabs/add-or-focus! project-list)))))})
 
 
 
-(defn req [method data callback]
+(defn req
+  ([method callback] (req method {} callback))
+  ([method data callback]
   (let [up (get-upsource)
         request-id (swap! (@up :request-id) inc)
         callbacks (@up :callbacks)
@@ -86,7 +118,7 @@
 
 
     (swap! callbacks assoc request-id callback)
-    (.send socket (create-request-str method data (@up :token) request-id))))
+    (.send socket (create-request-str method data (@up :token) request-id)))))
 
 (defn create-request-str [method data token request-id]
   (.stringify js/JSON #js {"type" "rpc"
@@ -98,5 +130,9 @@
 
 
 (comment
-  (req :getAllProjects {} println)
+  (get-upsource)
+
+  (def test_proj (atom nil))
+
+  (req :getAllProjects println)
   )

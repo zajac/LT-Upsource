@@ -12,15 +12,9 @@
 [
  ;; The app tag is kind of like global scope. You assign behaviors that affect
  ;; all of Light Table to it.
- [:app :lt.objs.style/set-skin "dark"]
  [:app :lt.objs.plugins/load-js "upsource_compiled.js"]
 
- ;; The editor tag is applied to all editors
- [:editor :lt.objs.editor/no-wrap]
- [:editor :lt.objs.style/set-theme "default"]
 
- ;; Here we can add behaviors to just clojure editors
- [:editor.clojure :lt.plugins.clojure/print-length 1000]
 
  [:upsource :lt.plugins.upsource/connect "http://localhost:9880" "admin" "admin"]
 
