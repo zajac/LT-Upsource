@@ -5,36 +5,52 @@
             [lt.util.load :as load])
   (:require-macros [lt.macros :refer [defui behavior]]))
 
-
-(comment
-  (def io (load/node_module "socket.io/node_modules/socket.io-client"))
-
-  )
+(def io (load/node_module "socket.io/node_modules/socket.io-client"))
 
 
-;; UI to be associated with an object
 (defui hello-panel [this]
-  [:h1 "Hello World from upsource!"])
+  [:h1 "Hello World from upsource!"]
+)
 
-;; Define an object prototype
-(object/object* ::upsource.hello
-                :tags [:upsource.hello]
-                :behaviors [::on-close-destroy]
+(object/object* ::upsource
+                :tags [:upsource]
+                :behaviors []
                 :init (fn [this]
                         (hello-panel this)))
 
-;; Currently used by :user.hello but could be reused by any
-;; object with a declaration in user.behaviors.
-(behavior ::on-close-destroy
-          :triggers #{:close}
-          :reaction (fn [this]
-                      (object/raise this :destroy)))
+(def upsource (object/create ::upsource))
 
-(def hello (object/create ::upsource.hello))
+(defn token [user passwd]
+  (str "Basic " (js/btoa (str user ":" passwd))))
 
-;; Create a user command. Commands can call any function
-;; and be bound to any keystroke.
-(cmd/command {:command :upsource.say-hello
-              :desc "Upsource: Say Hello"
+(behavior ::connect
+          :triggers #{:upsource-connect}
+          :desc "Upsource: connect to server"
+          :params [{:label "URL"}
+                   {:label "User"}
+                   {:label "Password"}]
+          :type :user
+          :exclusive true
+          :reaction (fn [this url user passwd]
+                      (object/merge! this {:socket (.connect io url, #js  {"reconnection" "false"
+                                                                           "forceNew" "true"
+					                                                                 "path" "/~socket.io"})
+                                           :token (token user passwd)})))
+
+
+
+
+(cmd/command {:command :upsource-connect
+              :desc "Upsource: open"
               :exec (fn []
-                      (tabs/add-or-focus! hello))})
+                      (if (not (@upsource :socket))
+                        (object/raise upsource :upsource-connect))
+                      (tabs/add-or-focus! upsource))})
+
+
+(comment
+  upsource
+
+
+
+  )

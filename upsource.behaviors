@@ -22,8 +22,8 @@
  ;; Here we can add behaviors to just clojure editors
  [:editor.clojure :lt.plugins.clojure/print-length 1000]
 
- ;; Behaviors specific to a user-defined object
- [:upsource.hello :lt.plugins.upsource/on-close-destroy]
+ [:upsource :lt.plugins.upsource/connect "http://localhost:9880" "admin" "admin"]
+
 
  ;; To subtract a behavior, prefix the name with '-' e.g.
  ;;  [:app :-lt.objs.intro/show-intro]
