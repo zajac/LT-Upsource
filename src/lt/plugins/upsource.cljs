@@ -13,9 +13,15 @@
 )
 
 (defui project-item [project]
-  [:button (project "projectName")]
-  :click println)
+  [:div [:button (project "projectName")]]
+  :click (fn [evt] (open-project (project "projectId"))))
 
+(defn open-project [projectId]
+  (req :getRevisionsList {"projectId" projectId
+                          "limit" 100}
+       (fn [result]
+         (let [revision-list (object/create ::revision-list result)]
+           (tabs/add-or-focus! revision-list)))))
 
 (defui project-list-view [this]
   [:div
@@ -23,6 +29,12 @@
         (@this :projects))])
 
 
+(defui revision-item [revision]
+  [:div (str "commit: " (revision "revisionIdShort") " date: " (revision "revisionDate ") "message: " (revision "revisionCommitMessage"))])
+
+(defui revision-list-view [this]
+  [:div
+   (map revision-item (@this :revisions))])
 
 (object/object* ::upsource
                 :tags [:upsource]
@@ -45,6 +57,19 @@
                         (object/merge! this {:projects (projects "project")})
                         (project-list-view this)
                         ))
+
+
+(object/object* ::revision-list
+                :tags [:project-list]
+                :behaviors [::on-close-destroy]
+                :revisions []
+                :projectId nil
+                :init (fn [this revisions]
+                        (println revisions)
+                        (object/merge! this {:revisions (revisions "revision")})
+                        (revision-list-view this)
+                        ))
+
 
 (def upsource (object/create ::upsource))
 
