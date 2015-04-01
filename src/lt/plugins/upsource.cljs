@@ -4,6 +4,7 @@
             [lt.objs.command :as cmd]
             [lt.util.load :as load]
             [lt.objs.workspace :as workspace]
+            [lt.objs.sidebar.workspace :as sidebar.workspace]
             [lt.objs.files :as files])
   (:require-macros [lt.macros :refer [defui behavior]]))
 
@@ -189,8 +190,10 @@
   (fs-get "!upsource/graphs/13d90488f0f382f6b5308662f75a4555d369ba4d/")
 ;;   (object/raise workspace/current-ws :add.folder! "upsource#/Graph")
 
+  (files/dir? "!upsource/light-table/0aa35c493a83fba8087a4c94233dd8044e3c001a/osx_deps.sh")
 
-
+  (files/read-dir "!upsource/hub-project/9ec713a98e0d2cb743268d1a600768fe6c8f5538/solutions")
+  (:alert (fs-get "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/solutions"))
   )
 
 (defn dissoc-in
@@ -240,11 +243,11 @@
 )
 
 (defmethod files/dir? :upsource [path]
-  (:dir? (fs-get path)))
-
+  (let [file (fs-get path)]
+    (or (:dir? file) (:files file))))
 
 (defmethod files/file? :upsource [path]
-  (:file? (fs-get path)))
+  (not (:dir? (fs-get path))))
 
 
 (defmethod files/writable? :upsource [path]
@@ -287,16 +290,23 @@
 
 
 (defmethod files/watch :upsource [path options alert]
+  (println "watch " path "alert " (nil? alert))
   (fs-merge path {:alert alert}))
 
 
 (comment
-  (fs-get "!upsource/graphs/e1dab27578a6c4afb6d8f8d0e560830b74d81d15")
+  (fs-fire! "!upsource/Epigenom/b69608784d575fca01e442c645da2a9084c568e5")
+  (keys (:files (fs-get "!upsource/Epigenom/b69608784d575fca01e442c645da2a9084c568e5")))
+  (:alert (fs-get "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/solutions"))
 
-  (fs-merge "!upsource/graphs/e1dab27578a6c4afb6d8f8d0e560830b74d81d15" {:qwe :qweqweqwe})
-
+  (files/watch "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/tests" {} (fn [x y]
+                                                                                           (println "fire!")))
+  (files/unwatch "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/tests" nil)
   (def a (atom {:qwe :qweqwe}))
   (swap! a assoc-in [:a :b :c] :d)
+
+  (:alert (fs-get "!upsource/hub-project/bd15c7bcd7a091c41f96c55fd519a15dd1dbc118/gradle"))
+  (count (files/read-dir "!upsource/hub-project/cf88899a1bba262b32ee5c4c87e75cd4f3bd0298/"))
 )
 
 
@@ -325,29 +335,45 @@
 
   )
 
-(defn fs-from-project-subtree [result]
-  {:files (reduce (fn [m p] (assoc m (first p) (second p)))
-                  {}
-                  (map (fn [item]
-                         (let [isDir (item "isDirectory")]
-                           [(item "displayName") {:dir? isDir
-                                                  :file? (not isDir)
-                                                  :stat #js{}}]))
-                       (result "items")))})
+(defn fs-append-item! [file]
+  (fs-merge (:path file) (:file file)))
+
+(defn fs-append-subtree! [result projectId revisionId]
+  (doseq [item (result "items")]
+    (let [dir? (item "isDirectory")]
+      (fs-append-item! {:path (str "!upsource/" projectId "/" revisionId "/" (item "fileId"))
+                        :file {:dir? dir?
+                               :file? (not dir?)
+                               :stat #js{}}}))))
+
+(comment
+
+  (:alert (fs-get "!upsource/Epigenom/773ca3bd5955550ce4b1e60a877b69f91fe6b0d2/util/src/main/java/org/"))
+  (files/read-dir "!upsource/Epigenom/2de045fb33c9236fc7b357aa7f8485d6f104e9ee/gradle")
+  (:alert (fs-get
+           "!upsource/Epigenom/281ba563b0df8ea0a2351c2d8b72b229b525f6f3 "))
+
+
+  (object/raise workspace/current-ws :refresh (:path @this))
+
+  (count (:folders @(first (object/by-tag :workspace.root))))
+  (:open-dirs @sidebar.workspace/tree)
+  (fs-fire! "!upsource/Epigenom/281ba563b0df8ea0a2351c2d8b72b229b525f6f3")
+  )
+
 
 (defmethod files/read-dir :upsource [path]
   (let [files (keys (:files (fs-get path)))]
     (if files
       files
       (do
-        (req :getProjectSubtree (file-in-revision path)
+        (let [fir (file-in-revision path)]
+          (req :getProjectSubtree fir
              (fn
                ([result]
-                (let [files (fs-from-project-subtree result)]
-                  (fs-merge path files))
-                (fs-fire! path)
-
-                ([_ error] (println error)))))
+                (fs-append-subtree! result (fir "projectId") (fir "revisionId"))
+                (fs-fire! path))
+               ([_ error] (println error)))))
         []))))
 
 (defmethod files/bomless-read :upsource [path]

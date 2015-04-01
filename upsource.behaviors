@@ -16,7 +16,7 @@
 
 
 
- [:upsource :lt.plugins.upsource/connect "http://localhost:9880" "admin" "admin"]
+ [:upsource :lt.plugins.upsource/connect "https://upsource.labs.intellij.net" "jetzajac" "zajac32167"]
 
 
  ;; To subtract a behavior, prefix the name with '-' e.g.
