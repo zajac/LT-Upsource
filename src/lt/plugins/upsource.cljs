@@ -371,6 +371,6 @@
                              (fs-merge path {:content (content "text")
                                              "mtime" (js/Date.)}))})
 
-        ""))))
+        "Loading..."))))
 
 
