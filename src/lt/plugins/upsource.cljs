@@ -118,9 +118,17 @@
 
 (defn process-message-str [upsource message-str]
   (let [message (js->clj (.parse js/JSON message-str))
-        callback (@(@upsource :callbacks) (message "X-Request-ID"))]
+        callbacks (@upsource :callbacks)
+        request-id (message "X-Request-ID")
+        callback (@callbacks request-id)]
     (if callback
-      (process-message message callback))))
+      (if (process-message message callback)
+        (swap! callbacks dissoc request-id)))))
+
+(comment
+  (def fuck (atom {1 2}))
+  (swap! fuck dissoc 1)
+  )
 
 (defn process-message [message callback]
   (dispatch message
@@ -130,13 +138,43 @@
 
 (defmulti dispatch (fn [message data callback] (keyword (message "event"))))
 
-(defmethod dispatch :RpcResult
-  ([message data callback]
+(defmethod dispatch :RpcResult [message data callback]
    (let [{result "result", error "error"} data]
      (cond
       result (callback result)
-      error (callback :error error)))))
+      error (callback :error error)))
+  true)
 
+
+
+(defmethod dispatch :RpcYield [message data callback]
+  (let [{result "result", error "error"} data
+        k-str (first (keys result))
+        k (keyword k-str)
+        handler (when k (k callback))]
+     (cond
+      result (when handler (handler (result k-str)))
+      error (let [eh (:error callback)]
+              (when eh (eh error)))))
+  false)
+
+(defmethod dispatch :RpcYieldFinished [message data callback]
+  (let [res-h (:finished! callback)]
+    (when res-h (res-h)))
+  true)
+
+(comment
+  (req :getProjectSubtree (file-in-revision "!upsource/graphs/d992c15a2fcc3318982cc52e7a62a31377da8e4b/src/graph")
+       (fn [results] (print (fs-from-project-subtree results))))
+
+
+  (req :getFileContent {"file" (file-in-revision "!upsource/idea-community/514e4e8ee4bece81fdc6ed70466b5e94a6f6c698/test-log.xml")
+                        "requestMarkup" true
+                        "requestFolding" false}
+       {:finished! (fn [] (println "finished!"))
+        :fileContent (fn [content]
+                       (println "content! " (content "text")))})
+  )
 
 (defn get-upsource []
   (if (not (@upsource :socket))
@@ -174,27 +212,6 @@
                            "data" (clj->js data)
                            "Authorization" token}))
 
-
-
-(comment
-  (get-upsource)
-
-  (def test_proj (atom nil))
-
-  (req :getAllProjects println)
-
-  (comps "!upsource/graphs/d992c15a2fcc3318982cc52e7a62a31377da8e4b/")
-
-  (files/read-dir "!upsource/graphs/13d90488f0f382f6b5308662f75a4555d369ba4d/")
-
-  (fs-get "!upsource/graphs/13d90488f0f382f6b5308662f75a4555d369ba4d/")
-;;   (object/raise workspace/current-ws :add.folder! "upsource#/Graph")
-
-  (files/dir? "!upsource/light-table/0aa35c493a83fba8087a4c94233dd8044e3c001a/osx_deps.sh")
-
-  (files/read-dir "!upsource/hub-project/9ec713a98e0d2cb743268d1a600768fe6c8f5538/solutions")
-  (:alert (fs-get "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/solutions"))
-  )
 
 (defn dissoc-in
   "Dissociates an entry from a nested associative structure returning a new
@@ -237,10 +254,6 @@
 (defmethod files/stats :upsource [path]
   (when (exists? path)
     (fs-get path)))
-(comment
-  (files/dir? "!upsource/graphs/5f018505b9f6021e0aa8451c852f172e3a35620b")
-  (fs-get "!upsource/graphs/5f018505b9f6021e0aa8451c852f172e3a35620b")
-)
 
 (defmethod files/dir? :upsource [path]
   (let [file (fs-get path)]
@@ -290,28 +303,11 @@
 
 
 (defmethod files/watch :upsource [path options alert]
-  (println "watch " path "alert " (nil? alert))
   (fs-merge path {:alert alert}))
 
 
-(comment
-  (fs-fire! "!upsource/Epigenom/b69608784d575fca01e442c645da2a9084c568e5")
-  (keys (:files (fs-get "!upsource/Epigenom/b69608784d575fca01e442c645da2a9084c568e5")))
-  (:alert (fs-get "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/solutions"))
-
-  (files/watch "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/tests" {} (fn [x y]
-                                                                                           (println "fire!")))
-  (files/unwatch "!upsource/hub-project/5dda7865dde0b1341d328e5a2a5f519eeb40a73b/tests" nil)
-  (def a (atom {:qwe :qweqwe}))
-  (swap! a assoc-in [:a :b :c] :d)
-
-  (:alert (fs-get "!upsource/hub-project/bd15c7bcd7a091c41f96c55fd519a15dd1dbc118/gradle"))
-  (count (files/read-dir "!upsource/hub-project/cf88899a1bba262b32ee5c4c87e75cd4f3bd0298/"))
-)
-
-
 (defmethod files/stat :upsource [path]
-  (:stat (fs-get path)))
+  (fs-get path))
 
 
 (defmethod files/write-stream :upsource [path]
@@ -329,12 +325,6 @@
      "revisionId" (nth cs 2)
      "fileName" (apply str (cons "/" (interpose "/" (drop 3 cs))))}))
 
-(comment
-  (req :getProjectSubtree (file-in-revision "!upsource/graphs/d992c15a2fcc3318982cc52e7a62a31377da8e4b/src/graph")
-       (fn [results] (print (fs-from-project-subtree results))))
-
-  )
-
 (defn fs-append-item! [file]
   (fs-merge (:path file) (:file file)))
 
@@ -344,23 +334,15 @@
       (fs-append-item! {:path (str "!upsource/" projectId "/" revisionId "/" (item "fileId"))
                         :file {:dir? dir?
                                :file? (not dir?)
-                               :stat #js{}}}))))
+                               :stat #js{}
+                               "mtime" (js/Date. 0)}}))))
 
 (comment
 
-  (:alert (fs-get "!upsource/Epigenom/773ca3bd5955550ce4b1e60a877b69f91fe6b0d2/util/src/main/java/org/"))
-  (files/read-dir "!upsource/Epigenom/2de045fb33c9236fc7b357aa7f8485d6f104e9ee/gradle")
-  (:alert (fs-get
-           "!upsource/Epigenom/281ba563b0df8ea0a2351c2d8b72b229b525f6f3 "))
+  (.-mtime (clj->js {"mtime" "asd"}))
 
-
-  (object/raise workspace/current-ws :refresh (:path @this))
-
-  (count (:folders @(first (object/by-tag :workspace.root))))
-  (:open-dirs @sidebar.workspace/tree)
-  (fs-fire! "!upsource/Epigenom/281ba563b0df8ea0a2351c2d8b72b229b525f6f3")
+  (aget (clj->js {"mtime" "asd"}) "mtime")
   )
-
 
 (defmethod files/read-dir :upsource [path]
   (let [files (keys (:files (fs-get path)))]
@@ -381,6 +363,13 @@
     (if content
       content
       (do
+        (req :getFileContent {"file" (file-in-revision path)
+                              "requestMarkup" true
+                              "requestFolding" false}
+             {:finished! (fn [] (fs-fire! path))
+              :fileContent (fn [content]
+                             (fs-merge path {:content (content "text")
+                                             "mtime" (js/Date.)}))})
 
         ""))))
 
