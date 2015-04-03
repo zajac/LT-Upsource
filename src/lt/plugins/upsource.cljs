@@ -5,7 +5,10 @@
             [lt.util.load :as load]
             [lt.objs.workspace :as workspace]
             [lt.objs.sidebar.workspace :as sidebar.workspace]
-            [lt.objs.files :as files])
+            [lt.objs.files :as files]
+            [lt.objs.document :as document]
+            [lt.objs.editor :as editor]
+            [lt.objs.editor.pool :as pool])
   (:require-macros [lt.macros :refer [defui behavior]]))
 
 (def io (load/node-module "socket.io/node_modules/socket.io-client"))
@@ -75,7 +78,6 @@
                 :behaviors [::on-close-destroy]
                 :projects []
                 :init (fn [this projects]
-                        (println projects)
                         (object/merge! this {:projects (projects "project")})
                         (project-list-view this)))
 
@@ -86,7 +88,6 @@
                 :revisions []
                 :projectId nil
                 :init (fn [this revisions projectId]
-                        (println revisions)
                         (object/merge! this {:revisions (revisions "revision")
                                              :projectId projectId})
                         (revision-list-view this)))
@@ -104,7 +105,6 @@
           :params [{:label "URL"}
                    {:label "User"}
                    {:label "Password"}]
-          :type :user
           :exclusive true
           :fs-type :upsource
           :reaction (fn [this url user passwd]
@@ -168,12 +168,13 @@
        (fn [results] (print (fs-from-project-subtree results))))
 
 
-  (req :getFileContent {"file" (file-in-revision "!upsource/idea-community/514e4e8ee4bece81fdc6ed70466b5e94a6f6c698/test-log.xml")
+  (req :getFileContent {"file" (file-in-revision "!upsource/graphs/d992c15a2fcc3318982cc52e7a62a31377da8e4b/src/graph/Edge.java")
                         "requestMarkup" true
                         "requestFolding" false}
        {:finished! (fn [] (println "finished!"))
         :fileContent (fn [content]
-                       (println "content! " (content "text")))})
+                       )
+        :referenceMarkup println})
   )
 
 (defn get-upsource []
@@ -252,8 +253,7 @@
 
 
 (defmethod files/stats :upsource [path]
-  (when (exists? path)
-    (fs-get path)))
+  (files/stat path))
 
 (defmethod files/dir? :upsource [path]
   (let [file (fs-get path)]
@@ -307,7 +307,7 @@
 
 
 (defmethod files/stat :upsource [path]
-  (fs-get path))
+  {"mtime" (:mtime (fs-get path))})
 
 
 (defmethod files/write-stream :upsource [path]
@@ -328,20 +328,26 @@
 (defn fs-append-item! [file]
   (fs-merge (:path file) (:file file)))
 
-(defn fs-append-subtree! [result projectId revisionId]
+(defn file-in-revisoin->path [fir]
+  (str "!upsource/" (fir "projectId") "/" (fir "revisionId") "/" (fir "fileId")))
+
+(defn fs-append-subtree! [result fir]
   (doseq [item (result "items")]
-    (let [dir? (item "isDirectory")]
-      (fs-append-item! {:path (str "!upsource/" projectId "/" revisionId "/" (item "fileId"))
+    (let [dir? (item "isDirectory")
+          fir (assoc fir "fileId" (item "fileId"))]
+      (fs-append-item! {:path (file-in-revisoin->path fir)
                         :file {:dir? dir?
                                :file? (not dir?)
                                :stat #js{}
-                               "mtime" (js/Date. 0)}}))))
+                               :mtime (js/Date. 0)}}))))
 
 (comment
 
   (.-mtime (clj->js {"mtime" "asd"}))
 
   (aget (clj->js {"mtime" "asd"}) "mtime")
+
+  (.showDevTools (.get (.-Window (js/require "nw.gui"))))
   )
 
 (defmethod files/read-dir :upsource [path]
@@ -353,10 +359,62 @@
           (req :getProjectSubtree fir
              (fn
                ([result]
-                (fs-append-subtree! result (fir "projectId") (fir "revisionId"))
+                (fs-append-subtree! result fir)
                 (fs-fire! path))
                ([_ error] (println error)))))
         []))))
+
+(defn nil-if--1 [x] (if (= -1 x) nil x))
+
+(defn update-reference-markup [markup path]
+  (when markup
+    (when-let [doc-obj (document/path->doc path)]
+      (update-document-reference-markup doc-obj markup))))
+
+(defn update-document-reference-markup [doc-obj markup]
+  (when-let [cm-doc (:doc @doc-obj)]
+    (doseq [m (.getAllMarks cm-doc)] (.clear m))
+    (let [navigation-table (markup "navigationPointsTable")
+          file-table (markup "fileNameTable")
+          target-by-id (fn [id]
+                         (first (filter (fn [nav] (= (nav "targetId") id)) navigation-table)))]
+      (when-let [e (.getEditor cm-doc)]
+        (doseq [r (markup "markup")]
+          (let [startPos (editor/index->pos e (r "startOffset"))
+                endPos (editor/index->pos e (r "endOffset"))
+                mark (.markText cm-doc startPos endPos)
+                target (target-by-id (r "targetId"))]
+            (aset mark "navigationInfo" {:capability-flags (r "capabilityFlags")
+                                         :hash (r "hash")
+                                         :target (when target {:file (file-in-revisoin->path (nth file-table (target "fileId")))
+                                                               :start-offset (nil-if--1 (target "startOffset"))
+                                                               :end-offset (nil-if--1 (target "endOffset"))
+                                                               :stub-index (nil-if--1 (target "stubIndex"))})})))))))
+
+
+(behavior ::update-markup
+          :triggers #{:init}
+          :desc "Upsource: update document markup on open"
+          :reaction (fn [this]
+                      (when-let [path (:path @this)]
+                        (req :getFileContent {"file" (file-in-revision path)
+                                              "requestMarkup" true
+                                              "requestFolding" false}
+                             {:referenceMarkup (fn [markup]
+                                                 (update-document-reference-markup this markup))}))))
+
+
+
+(cmd/command {:command :go-to-declaration
+              :desc "Upsource: GoTo Declaration"
+              :exec (fn []
+                      (when-let [cur (pool/last-active)]
+                        (let [cursor (editor/->cursor cur)
+                              marks  (editor/find-marks cur cursor)]
+                          (when-let [target (first (filter identity (map (fn[mark] (:target (aget mark "navigationInfo"))) marks)))]
+                            (when-let [index (:start-offset target)]
+                              (editor/move-cursor cur (editor/index->pos cur index)))))))})
+
 
 (defmethod files/bomless-read :upsource [path]
   (let [content (:content (fs-get path))]
@@ -366,10 +424,13 @@
         (req :getFileContent {"file" (file-in-revision path)
                               "requestMarkup" true
                               "requestFolding" false}
-             {:finished! (fn [] (fs-fire! path))
-              :fileContent (fn [content]
+             {:fileContent (fn [content]
                              (fs-merge path {:content (content "text")
-                                             "mtime" (js/Date.)}))})
+                                             :mtime (js/Date.)})
+                             (fs-fire! path))
+              :referenceMarkup (fn [markup]
+                                 (update-reference-markup markup path)
+                                 )})
 
         "Loading..."))))
 

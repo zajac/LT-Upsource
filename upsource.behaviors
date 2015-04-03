@@ -16,8 +16,11 @@
 
 
 
- [:upsource :lt.plugins.upsource/connect "https://upsource.labs.intellij.net" "jetzajac" "zajac32167"]
+ [:upsource :lt.plugins.upsource/connect "http://localhost:9880" "admin" "admin"]
 
+ [:app :lt.objs.style/set-skin "dark"]
+
+ [:document :lt.plugins.upsource/update-markup]
 
  ;; To subtract a behavior, prefix the name with '-' e.g.
  ;;  [:app :-lt.objs.intro/show-intro]
