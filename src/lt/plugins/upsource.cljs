@@ -8,7 +8,8 @@
             [lt.objs.files :as files]
             [lt.objs.document :as document]
             [lt.objs.editor :as editor]
-            [lt.objs.editor.pool :as pool])
+            [lt.objs.editor.pool :as pool]
+            [lt.objs.opener :as opener])
   (:require-macros [lt.macros :refer [defui behavior]]))
 
 (def io (load/node-module "socket.io/node_modules/socket.io-client"))
@@ -329,7 +330,7 @@
   (fs-merge (:path file) (:file file)))
 
 (defn file-in-revisoin->path [fir]
-  (str "!upsource/" (fir "projectId") "/" (fir "revisionId") "/" (fir "fileId")))
+  (str "!upsource/" (fir "projectId") "/" (fir "revisionId") "/" (fir "fileName")))
 
 (defn fs-append-subtree! [result fir]
   (doseq [item (result "items")]
@@ -403,7 +404,13 @@
                              {:referenceMarkup (fn [markup]
                                                  (update-document-reference-markup this markup))}))))
 
-
+(defn navigate [path index]
+  (object/raise opener/opener :open! path)
+  (when-let [doc-obj (document/path->doc path)]
+    (when-let [cm-doc (:doc @doc-obj)]
+      (let [e (.getEditor cm-doc)
+            pos (editor/index->pos e index)]
+        (editor/move-cursor e pos)))))
 
 (cmd/command {:command :go-to-declaration
               :desc "Upsource: GoTo Declaration"
@@ -413,25 +420,38 @@
                               marks  (editor/find-marks cur cursor)]
                           (when-let [target (first (filter identity (map (fn[mark] (:target (aget mark "navigationInfo"))) marks)))]
                             (when-let [index (:start-offset target)]
-                              (editor/move-cursor cur (editor/index->pos cur index)))))))})
+                              (navigate (:file target) index))
+                            (when-let [stub-index (:stub-index target)]
+                              (req :getStubNavigationRange {"fileId" (file-in-revision (:file target))
+                                                            "elementId" stub-index}
+                                   (fn [result]
+                                     (let [index (result "startOffset")]
+                                       (load-file-async (:file target) (fn [text]
+                                                                         (navigate (:file target) index)
+                                                                         ))))))))))})
 
+(defmethod files/bomless-read-async :upsource [path cb]
+  (let [content (:content (fs-get path))]
+    (if content
+      (cb content)
+      (load-file-async path (fn [text]
+                              (cb text)
+                              (fs-fire! path))))))
 
 (defmethod files/bomless-read :upsource [path]
   (let [content (:content (fs-get path))]
     (if content
       content
       (do
-        (req :getFileContent {"file" (file-in-revision path)
-                              "requestMarkup" true
-                              "requestFolding" false}
-             {:fileContent (fn [content]
-                             (fs-merge path {:content (content "text")
-                                             :mtime (js/Date.)})
-                             (fs-fire! path))
-              :referenceMarkup (fn [markup]
-                                 (update-reference-markup markup path)
-                                 )})
-
+        (load-file-async path (fn [text]
+                                (fs-fire! path)))
         "Loading..."))))
 
-
+(defn load-file-async [path cb]
+  (req :getFileContent {"file" (file-in-revision path)
+                        "requestMarkup" false
+                        "requestFolding" false}
+       {:fileContent (fn [content]
+                       (fs-merge path {:content (content "text")
+                                       :mtime (js/Date.)})
+                       (cb (content "text")))}))
