@@ -44,35 +44,6 @@
                 :tags [:upsource :filesystem]
                 :behaviors [])
 
-(def instance (atom nil))
-
-(def client-name "Upsource")
-
-(scl/add-connector {:name "Upsource"
-                    :desc "Connect to Upsource server."
-                    :connect (fn []
-                               (let [up (object/create ::upsource)]
-                                 (object/raise up :upsource-connect)
-                                 (clients/handle-connection! {:name client-name
-                                                              :tags [:upsource-connector]
-                                                              :root-relative "!upsource"
-                                                              :commands #{}
-                                                              :type "UP"})
-                                 (reset! instance up)))})
-
-(defmulti on-message identity)
-
-(defmethod on-message :client.close [_ _ _]
-  (clients/rem! (clients/by-name client-name))
-  (object/raise @instance :destroy))
-
-
-(defmethod on-message :default [_ _ _])
-
-(behavior ::send!
-          :triggers #{:send!}
-          :reaction (fn[connector data]
-                      (on-message (keyword (:command data)) (:data data) (:cb data))))
 
 (defn open-project [projectId]
   (rpc/req :getRevisionsList {"projectId" projectId

@@ -19,7 +19,7 @@
 
  [:document :lt.plugins.upsource.code-insight/update-markup]
 
- [:upsource-connector :lt.plugins.upsource/send!]
+ [:upsource-connector :lt.plugins.upsource.client/send!]
 
  [:upsource :lt.plugins.upsource.filesystem/init]
  ;; To subtract a behavior, prefix the name with '-' e.g.
