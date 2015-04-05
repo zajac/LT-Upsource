@@ -1,3 +1,4 @@
+
 ;; User behaviors
 ;; -----------------------------
 ;; Behaviors are stored as a set of diffs that are merged together
@@ -14,15 +15,13 @@
  ;; all of Light Table to it.
  [:app :lt.objs.plugins/load-js "upsource_compiled.js"]
 
+ [:upsource :lt.plugins.upsource.rpc/connect "http://localhost:9880" "admin" "admin"]
 
+ [:document :lt.plugins.upsource.code-insight/update-markup]
 
- [:upsource :lt.plugins.upsource/connect "http://localhost:9880" "admin" "admin"]
+ [:upsource-connector :lt.plugins.upsource/send!]
 
- [:app :lt.objs.style/set-skin "dark"]
-
- [:document :lt.plugins.upsource/update-markup]
-
+ [:upsource :lt.plugins.upsource.filesystem/init]
  ;; To subtract a behavior, prefix the name with '-' e.g.
  ;;  [:app :-lt.objs.intro/show-intro]
 ]
-
